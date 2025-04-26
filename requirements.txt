@@ -5,4 +5,7 @@ pydantic==2.6.1
 torch==2.2.1
 torchvision==0.17.1
 opencv-python==4.9.0.80
-numpy==1.26.4 
+numpy==2.0.0
+lightning
+tonic
+aedat
