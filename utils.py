@@ -1,9 +1,11 @@
 import tonic
 import tonic.transforms as TT
 import torch
+import numpy as np
+import torch
 
 SENSOR_SIZE = (1280, 720, 2)
-transform = TT.ToFrame(sensor_size=SENSOR_SIZE, time_window=10000)
+transform = TT.ToFrame(sensor_size=SENSOR_SIZE, n_time_bins=100)
 
 def load_from_aedat(file_path):
     return tonic.io.read_aedat4(file_path)

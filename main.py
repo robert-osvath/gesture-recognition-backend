@@ -1,7 +1,8 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from fastapi.staticfiles import StaticFiles
+from langchain_openai import ChatOpenAI
+from langchain.schema import HumanMessage
 import uvicorn
 import tempfile
 import os
@@ -12,6 +13,11 @@ import json
 import logging
 import cv2
 import lightning_model
+import torch
+
+BASE_LLM_URL = "http://localhost:1234/v1"
+LLM_API_KEY = "lm-studio"
+LLM_MODEL = "deepseek-r1-distill-qwen-7b"
 
 with open('labels.json', 'r') as f:
     labels = json.load(f)
@@ -36,7 +42,6 @@ app.add_middleware(
 
 @app.post("/upload-video")
 async def upload_video(video: UploadFile = File(...)):
-    logger.debug(video.headers)
     try:
         # Create a temporary file to store the uploaded video
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(video.filename)[1]) as temp_file:
@@ -76,9 +81,6 @@ async def upload_video(video: UploadFile = File(...)):
         events = utils.load_from_aedat(output_aedat_file_path)
         frames = utils.transform_events_to_frames(events)
 
-        # Load model
-        model = lightning_model.get_model()
-
         # Convert avi into mp4
         output_mp4_path = os.path.join(output_dir, "dvs-video.mp4")
         ffmpeg_command = [
@@ -96,7 +98,70 @@ async def upload_video(video: UploadFile = File(...)):
             media_type='video/mp4'
         )
 
+        dvs_dir_data = {
+            "dir": output_dir,
+            "data": output_aedat_file_path,
+            "mp4_video": output_mp4_path,
+            "dvs_video": output_dvs_video_path
+        }
+        with open("temp_dvs_dir.json", "w") as f:
+            json.dump(dvs_dir_data, f)
+
         return streaming_response
+
+    except Exception as e:
+        return {"error": str(e)}
+    
+@app.get("/get-response")
+async def get_response():
+    try:
+        with open("temp_dvs_dir.json", 'r') as f:
+            dvs_dir_data = json.load(f)
+
+        # Load the model
+        model = lightning_model.get_model()
+        model.eval()
+        model.freeze()
+
+        # Load and transform the data
+        aedat_file_path = dvs_dir_data["data"]
+        dvs_data = utils.load_from_aedat(aedat_file_path)
+        frames = utils.transform_events_to_frames(dvs_data)
+        frames = frames.unsqueeze(0)
+
+        logger.debug("prediction started")
+        preds = model.model(frames)["probs"]
+        logger.debug("prediction ended")
+        predicted_label = torch.argmax(torch.squeeze(preds), dim=0)
+        predicted_label = str(predicted_label.item())
+        if predicted_label not in labels.keys():
+            predicted_word = 'undefined'
+        else:
+            predicted_word = labels[predicted_label]
+
+        logger.debug(f'Predicted label: {predicted_label}')
+        logger.debug(f'Predicted word: {predicted_word}')
+
+        llm = ChatOpenAI(
+            base_url=BASE_LLM_URL,
+            api_key=LLM_API_KEY,
+            temperature=0.9,
+            model=LLM_MODEL
+        )
+
+        prompt = f"""
+        A user has uploaded a video of themselves signing a word in the Word-Level American Sign Language.
+        The pretrained CNN model predicted the word to be: {predicted_word}.
+
+        If the word is undefined, please give the following response: "I wasn't able to recognize the word."
+
+        If not, please start the response like this: "Your word was {predicted_word}". After this, give a more detailed explanation
+        about the history of the sign and the etimology of the word in the context of the Word-Level American Sign Language.  
+        """
+
+        response = llm([HumanMessage(content=prompt)])
+
+        return response.content
 
     except Exception as e:
         return {"error": str(e)}
