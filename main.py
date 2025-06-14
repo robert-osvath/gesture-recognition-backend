@@ -20,9 +20,8 @@ LLM_API_KEY = "lm-studio"
 LLM_MODEL = "deepseek-r1-distill-qwen-7b"
 # LLM_MODEL = "mistral-7b-instruct-v0.3"
 
-with open('labels100.json', 'r') as f:
+with open('labels.json', 'r') as f:
     labels = json.load(f)
-    structured_labels = {x['target']: x['label'] for x in labels}
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -133,10 +132,10 @@ async def get_response():
         predicted_label = torch.argmax(torch.squeeze(preds), dim=0)
         predicted_label = str(predicted_label.item() + 1)
 
-        if predicted_label not in structured_labels.keys():
+        if predicted_label not in labels.keys():
             predicted_word = 'undefined'
         else:
-            predicted_word = structured_labels[predicted_label]
+            predicted_word = labels[predicted_label]
 
         logger.debug(f'Predicted label: {predicted_label}')
         logger.debug(f'Predicted word: {predicted_word}')
