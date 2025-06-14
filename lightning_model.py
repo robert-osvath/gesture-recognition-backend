@@ -90,4 +90,4 @@ class SignLanguageRecognition(L.LightningModule):
   
 
 def get_model():
-  return SignLanguageRecognition.load_from_checkpoint('checkpoints\epoch=9-step=370.ckpt')
+  return SignLanguageRecognition.load_from_checkpoint("checkpoints/nwlasl-20-classes-version-4-time_window-normalized.ckpt")

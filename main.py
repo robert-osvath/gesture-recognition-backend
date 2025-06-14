@@ -18,9 +18,11 @@ import torch
 BASE_LLM_URL = "http://localhost:1234/v1"
 LLM_API_KEY = "lm-studio"
 LLM_MODEL = "deepseek-r1-distill-qwen-7b"
+# LLM_MODEL = "mistral-7b-instruct-v0.3"
 
-with open('labels.json', 'r') as f:
+with open('labels100.json', 'r') as f:
     labels = json.load(f)
+    structured_labels = {x['target']: x['label'] for x in labels}
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -70,16 +72,12 @@ async def upload_video(video: UploadFile = File(...)):
         v2e_command = [
             "cmd.exe", "/C",
             f"call conda activate venv && "
-            f'v2e -i {temp_file_path} -o {output_dir} --input_frame_rate 30 --output_height 720 --output_width 1280 --no_preview --disable_slomo --dvs_aedat4 data.aedat --overwrite'
+            f'v2e -i {temp_file_path} -o {output_dir} --input_frame_rate 30 --dvs346 --no_preview --disable_slomo --dvs_aedat4 data.aedat --overwrite'
         ]
 
         logger.debug("Conda command set up")
         subprocess.run(v2e_command, check=True)
         logger.debug("Command executed")
-
-        # Load and convert
-        events = utils.load_from_aedat(output_aedat_file_path)
-        frames = utils.transform_events_to_frames(events)
 
         # Convert avi into mp4
         output_mp4_path = os.path.join(output_dir, "dvs-video.mp4")
@@ -133,11 +131,12 @@ async def get_response():
         preds = model.model(frames)["probs"]
         logger.debug("prediction ended")
         predicted_label = torch.argmax(torch.squeeze(preds), dim=0)
-        predicted_label = str(predicted_label.item())
-        if predicted_label not in labels.keys():
+        predicted_label = str(predicted_label.item() + 1)
+
+        if predicted_label not in structured_labels.keys():
             predicted_word = 'undefined'
         else:
-            predicted_word = labels[predicted_label]
+            predicted_word = structured_labels[predicted_label]
 
         logger.debug(f'Predicted label: {predicted_label}')
         logger.debug(f'Predicted word: {predicted_word}')
@@ -161,7 +160,8 @@ async def get_response():
 
         response = llm([HumanMessage(content=prompt)])
 
-        return response.content
+        message = response.content.split("</think>")[1]
+        return message
 
     except Exception as e:
         return {"error": str(e)}
